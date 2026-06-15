@@ -98,9 +98,6 @@ project_root/
 │   │   └── js/app.js           # SPA 前端逻辑
 │   └── templates/
 │       └── index.html          # SPA 入口模板
-├── AGENTS.md                   # AI 开发规范
-├── specs.md                    # 项目架构文档
-├── todo.md                     # 里程碑账本
 ├── Start-WorldCupServer.ps1    # 快速启动脚本
 ├── Setup-WorldCup.ps1          # 首次搭建全流程脚本
 ├── .env.example                # 环境变量模板
