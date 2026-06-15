@@ -1,0 +1,27 @@
+# ── API authentication token (auto-generated, contains secrets) ──────────
+.wc2026_token.json
+
+# ── SQLite database files (runtime artifacts) ─────────────────────────────
+*.db
+
+# ── Environment configuration (contains credentials) ──────────────────────
+.env
+
+# ── Python bytecode and cache ─────────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── Temporary development files ───────────────────────────────────────────
+tempfiles/
+
+# ── IDE / OS clutter ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ── Internal development docs (not for public repo) ───────────────────────
+AGENTS.md
+specs.md
+todo.md

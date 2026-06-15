@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 世界杯全景数据中心</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .view-section { display: none; }
+        .view-section.active { display: block; }
+        
+        .refresh-btn {
+            background: linear-gradient(90deg, rgba(0,255,135,0.2), rgba(0,240,255,0.2));
+            border: 1px solid var(--accent-green);
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.3s;
+            margin: 20px;
+        }
+        .refresh-btn:hover {
+            background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+            color: #000;
+            font-weight: bold;
+        }
+        .refreshing .spin-icon {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div id="error-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; background:rgba(255,60,60,0.9); color:#fff; padding:10px 20px; text-align:center; font-size:0.85rem; cursor:pointer;" onclick="this.style.display='none'">
+    <span id="error-banner-text"></span> <span style="opacity:0.6;">(点击关闭)</span>
+</div>
+
+<aside class="sidebar">
+    <div class="sidebar-header">
+        <h1>2026 世界杯</h1>
+        <div class="subtitle">48支劲旅 • 104场鏖战<br>逐鹿北美之巅</div>
+    </div>
+    
+    <nav class="tree-menu">
+        <div class="tree-group">
+            <div class="tree-title">核心赛事</div>
+            <a href="#" class="tree-link active" onclick="switchView('live', this)">
+                <span class="tree-icon">📺</span> 赛事看板
+            </a>
+            <a href="#" class="tree-link" onclick="switchView('all', this)">
+                <span class="tree-icon">📜</span> 全部比赛
+            </a>
+            <a href="#" class="tree-link" onclick="switchView('bracket', this)">
+                <span class="tree-icon">🌳</span> 晋级树图
+            </a>
+        </div>
+        <div class="tree-group">
+            <div class="tree-title">资料库</div>
+            <a href="#" class="tree-link" onclick="switchView('teams', this)">
+                <span class="tree-icon">🛡️</span> 球队巡礼
+            </a>
+            <a href="#" class="tree-link" onclick="switchView('standings', this)">
+                <span class="tree-icon">📊</span> 小组积分榜
+            </a>
+            <a href="#" class="tree-link" onclick="switchView('scorers', this)">
+                <span class="tree-icon">⚽</span> 射手榜
+            </a>
+            <a href="#" class="tree-link" onclick="switchView('power', this)">
+                <span class="tree-icon">🏆</span> 夺冠热门
+            </a>
+            <a href="#" class="tree-link" onclick="switchView('history', this)">
+                <span class="tree-icon">👑</span> 历届冠军
+            </a>
+        </div>
+    </nav>
+    <div style="padding: 15px 20px; border-top: 1px solid rgba(255,255,255,0.05);">
+        <label style="font-size:0.75rem; color: rgba(255,255,255,0.4); display:block; margin-bottom:6px;">自动刷新间隔</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <input id="refresh-interval-input" type="number" min="1" max="60" value="5" 
+                style="width:60px; padding:6px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); 
+                background:rgba(255,255,255,0.05); color:#fff; font-family:inherit; font-size:0.85rem; text-align:center;">
+            <span style="font-size:0.75rem; color: rgba(255,255,255,0.3);">分钟</span>
+        </div>
+    </div>
+    <button id="refresh-btn" class="refresh-btn" onclick="triggerUpdate()" style="margin: 10px 20px; width: calc(100% - 40px);">
+        <span class="spin-icon">🔄</span> 实时更新战况
+    </button>
+    <div style="padding: 20px; font-size: 0.75rem; color: rgba(255,255,255,0.2); text-align: center;">
+        World Cup Aggregator<br>v3.0 (Client-Server SPA)
+    </div>
+</aside>
+
+<main class="main-content">
+    <!-- Live & Upcoming View -->
+    <div id="view-live" class="view-section active">
+        <div class="container">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                <h2 style="color: var(--text-muted); margin: 0;">正在直播 & 即将打响</h2>
+                <div id="countdown-container"></div>
+            </div>
+            <div id="matches-live-container"></div>
+        </div>
+    </div>
+
+    <!-- All Matches View -->
+    <div id="view-all" class="view-section">
+        <div class="container">
+            <h2 style="color: var(--text-muted); margin-top: 0; margin-bottom: 20px;">全部比赛排期</h2>
+            <div id="matches-all-container"></div>
+        </div>
+    </div>
+
+    <!-- Bracket View -->
+    <div id="view-bracket" class="view-section">
+        <div class="container" style="max-width: 100%;">
+            <h2 style="color: var(--text-muted); margin-top: 0; margin-bottom: 30px;">淘汰赛晋级树图</h2>
+            <div id="bracket-container" style="display:flex; gap:30px; overflow-x:auto; padding-bottom: 40px;"></div>
+        </div>
+    </div>
+
+    <!-- Teams View -->
+    <div id="view-teams" class="view-section">
+        <div class="container">
+            <h2 style="color: var(--text-muted); margin-top: 0; margin-bottom: 20px;">参赛球队巡礼</h2>
+            <div class="teams-grid" id="teams-container"></div>
+        </div>
+    </div>
+
+    <!-- Standings View -->
+    <div id="view-standings" class="view-section">
+        <div class="container">
+            <h2 style="color: var(--text-muted); margin-top: 0; margin-bottom: 20px;">小组积分榜</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px;" id="standings-container"></div>
+        </div>
+    </div>
+
+    <!-- Scorers View -->
+    <div id="view-scorers" class="view-section">
+        <div class="container" style="max-width: 600px;">
+            <h2 style="color: var(--text-muted); margin-top: 0; margin-bottom: 20px;">本届射手榜</h2>
+            <div style="border-radius:16px; overflow:hidden; border: 1px solid rgba(255,255,255,0.1);" id="scorers-container"></div>
+        </div>
+    </div>
+
+    <!-- Power Ranking View -->
+    <div id="view-power" class="view-section">
+        <div class="container" style="max-width: 900px;">
+            <h2 style="color: var(--text-muted); margin-top: 0; margin-bottom: 10px;">🏆 夺冠热门排名</h2>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 20px;">
+                基于 FIFA 排名、球员身价、世界杯历史战绩和预选赛表现的动态预测模型。随比赛进程逐步融入实际赛果。
+            </p>
+            <div id="power-ranking-container"></div>
+        </div>
+    </div>
+
+    <!-- History View -->
+    <div id="view-history" class="view-section">
+        <div class="container" style="max-width: 900px;">
+            <h2 style="color: var(--text-muted); margin-top: 0; margin-bottom: 10px;">👑 历届冠军</h2>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 20px;">
+                近 20 年 6 届世界杯前四名。传统豪门与新贵黑马的交织。
+            </p>
+            <div id="history-container"></div>
+        </div>
+    </div>
+</main>
+
+<!-- Unified Info Modal -->
+<div id="info-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 1000; justify-content: center; align-items: center;">
+    <div class="modal-content" style="background: var(--bg-color); border: 1px solid var(--accent-blue); border-radius: 16px; padding: 30px; max-width: 500px; width: 90%; text-align: left; position: relative; max-height: 85vh; overflow-y: auto;">
+        <span class="close-btn" style="position: absolute; top: 15px; right: 20px; font-size: 1.5rem; cursor: pointer; color: var(--text-muted);" onclick="document.getElementById('info-modal').style.display='none'">&times;</span>
+        <div style="display:flex; gap:20px; align-items:center; margin-bottom: 20px;">
+            <img id="modal-img" src="" style="width:100px; height:100px; border-radius:12px; object-fit:cover; display:none; border:1px solid rgba(255,255,255,0.1);">
+            <div>
+                <h2 id="modal-name" style="margin:0 0 5px 0; font-size:1.5rem;"></h2>
+                <div style="color:var(--accent-blue); font-size:0.9rem;" id="modal-sub"></div>
+            </div>
+        </div>
+        <div id="modal-desc" style="font-size:0.95rem; line-height:1.6; color:var(--text-main); margin-bottom:20px;"></div>
+        <div id="modal-stats" style="background:rgba(255,255,255,0.05); padding:15px; border-radius:8px;"></div>
+    </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
