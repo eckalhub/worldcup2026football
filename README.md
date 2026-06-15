@@ -14,7 +14,7 @@
 | 球队巡礼 | 48 支球队卡片网格展示 |
 | 小组积分榜 | 12 个小组实时排名（胜/平/负/净胜球/积分） |
 | 射手榜 | 按进球数排序的实时射手榜 |
-| 夺冠热门 | 基于 ELO + 赛会表现的冠军概率模型 |
+| 夺冠热门 | 多因子概率模型（ELO + 时衰减历史动量 + 身价 + FIFA 排名） |
 | 历届冠军 | 2002-2022 六届世界杯回顾 |
 
 ## 技术栈
@@ -27,10 +27,10 @@
 
 ## 数据来源
 
-- [worldcup26.ir](https://worldcup26.ir) REST API — 实时比赛数据（JWT 认证）
+- [dongqiudi.com](https://www.dongqiudi.com) — 比赛时间（北京时间权威），赛程阶段与淘汰赛对阵
+- [worldcup26.ir](https://worldcup26.ir) REST API — 实时比分与射手数据（JWT 认证）
 - [TheSportsDB](https://www.thesportsdb.com) — 球员肖像、Fanart
 - [Wikipedia REST API](https://en.wikipedia.org/api/rest_v1/) — 球员英文传记
-- [sportshistori.com](https://sportshistori.com) — 48 队完整大名单数据
 
 ## 快速开始
 
@@ -87,7 +87,8 @@ project_root/
 ├── src/                        # 源代码目录
 │   ├── app.py                  # Flask 服务入口
 │   ├── data_adapter.py         # worldcup26.ir API 集成层
-│   ├── data_service.py         # 数据查询与评分计算
+│   ├── data_service.py         # 数据查询与夺冠概率计算
+│   ├── dongqiudi_fetcher.py    # 懂球帝赛程抓取（北京时间→UTC）
 │   ├── init_db.py              # SQLite 建表与迁移
 │   ├── import_squads.py        # 48 队大名单导入器
 │   ├── scrape_and_store.py     # 数据管道与调度
@@ -117,19 +118,23 @@ project_root/
 |---|---|---|
 | `/` | GET | SPA 首页 |
 | `/api/data` | GET | 所有核心数据（球队/球员/比赛/转播） |
-| `/api/power_ranking` | GET | 48 队冠军概率排名 |
+| `/api/power_ranking` | GET | 多因子夺冠概率排名（含 ELO/历史/身价/FIFA 分项得分） |
 | `/api/player_ratings` | GET | 球员 0-100 能力评级 |
 | `/api/trigger_scrape` | POST | 手动触发数据更新 |
 | `/api/settings` | GET/POST | 读取/设置刷新间隔（1-60 分钟） |
 
 ## 冠军概率模型
 
-采用 ELO 基线 + 渐进赛会表现的双层模型：
+4 因子融合基线 + 阶段权重曲线 + Softmax 概率化：
 
-1. **ELO 基线**：转换为 0-10 标准化评分
-2. **赛会表现加权**：随比赛进行，表现权重从 0% 线性增长至 65%
-3. **Softmax 温度参数 T=2.5**：控制概率分布的离散度
-4. **四级分层**：Elite / Contender / Dark Horse / Underdog
+1. **ELO 评分 (30%)**：当前竞技实力，min-max 标准化到 0-10
+2. **历史动量 (35%)**：2002-2022 六届世界杯冠亚季殿军计分，半衰期 8 年指数衰减（2022 权 1.0→2002 权 0.19）
+3. **身价评分 (20%)**：阵容市场价值标准化
+4. **FIFA 排名 (15%)**：官方排名逆序标准化
+5. **阶段权重曲线**：小组赛 weight=0 → 1/16 → 0.20 → 半决赛 → 0.65 → 决赛 → 0.80（赛会表现逐步取代基线）
+6. **复合公式**：`composite = (1-weight) × baseline + weight × 赛会表现`
+7. **Softmax T=2.5** → 概率分布
+8. **四级分层**：Elite / Contender / Dark Horse / Underdog
 
 ## 开源许可
 

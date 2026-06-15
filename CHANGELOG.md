@@ -28,6 +28,13 @@ All notable changes to World Cup 2026 Schedule Aggregator.
 - 清理 scrape_and_store.py 冗余代码
 - 修复 Start-WorldCupServer.ps1 可移植性
 
+### Fixed
+- **比赛时间权威源切换至懂球帝**: 接入 dongqiudi 赛程抓取，北京时间→UTC 转换消除时区偏差
+- **晋级树图数据修复**: DOM 阶段解析 + TBD 占位球队 + label 字段淘汰赛标签
+- **比赛状态判断修复**: 系统 UTC 时间为权威，不再盲信 API 的 api_finished 字段
+- **夺冠概率模型升级**: 从纯 ELO 升级为 4 因子（ELO 30% + 时衰减历史动量 35% + 身价 20% + FIFA 15%）+ 阶段权重曲线
+- **依赖修复**: lxml 版本约束放宽至 `>=5.0` 兼容 scrapling
+
 ### Project
 - 源码目录重构为 `src/` 集中式结构
 - 创建 README.md / LICENSE / CHANGELOG.md
