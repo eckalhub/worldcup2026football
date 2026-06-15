@@ -25,6 +25,7 @@ import argparse
 from typing import Dict, List, Optional, Any
 from contextlib import closing
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -259,13 +260,18 @@ class WorldCupAPI:
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
 
+TEHRAN_TZ = ZoneInfo("Asia/Tehran")
+
 def _parse_local_date(raw: str) -> str:
-    """Convert '06/11/2026 13:00' → '2026-06-11T13:00:00Z' (UTC)"""
+    """Convert '06/11/2026 13:00' (Tehran local time) → '2026-06-11T08:30:00Z' (UTC)"""
     if not raw:
         return ""
     try:
-        dt = datetime.strptime(raw.strip(), "%m/%d/%Y %H:%M")
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        naive_dt = datetime.strptime(raw.strip(), "%m/%d/%Y %H:%M")
+        # Attach Tehran timezone and convert to UTC
+        tehran_dt = naive_dt.replace(tzinfo=TEHRAN_TZ)
+        utc_dt = tehran_dt.astimezone(timezone.utc)
+        return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     except ValueError:
         logger.warning("Could not parse date: %s", raw)
         return raw
