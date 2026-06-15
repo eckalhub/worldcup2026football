@@ -277,8 +277,52 @@ def get_power_ranking(
 
     # ── Per-team computation ─────────────────────────────────────────────
     results: List[Dict[str, Any]] = []
-    completed_count = len(finished_matches)
-    performance_weight = min(0.65, (completed_count / total_games) * 0.80)
+
+    # Stage-based weight curve (replaces games-played linear weight)
+    # Mapping: stage_name → base_weight
+    STAGE_WEIGHTS = {
+        '1/16决赛': 0.20,
+        '1/8决赛': 0.35,
+        '1/4决赛': 0.50,
+        '半决赛': 0.65,
+        '决赛': 0.80,
+        '季军赛': 0.65,
+    }
+
+    def _get_stage_weight(tid: int) -> float:
+        """Per-team weight: how much tournament performance matters."""
+        current_stage = team_stage.get(tid, '')
+        base = 0.0
+
+        # Scan for the deepest knockout stage this team has reached
+        for kw in ['决赛', '季军赛', '半决赛', '1/4决赛', '1/8决赛', '1/16决赛']:
+            if kw in current_stage:
+                base = STAGE_WEIGHTS[kw]
+                break
+
+        # Within-stage performance bonus (0.00 - 0.08)
+        tstats = team_tournament.get(tid, {})
+        played = tstats.get('played', 0)
+        wins = tstats.get('wins', 0)
+        if played > 0 and wins == played:
+            bonus = 0.08
+        elif wins > 0:
+            bonus = 0.04
+        else:
+            bonus = 0.0
+
+        # Cap: don't exceed next stage's base
+        next_base = 0.80  # default cap
+        for i, kw in enumerate(['决赛', '季军赛', '半决赛', '1/4决赛', '1/8决赛', '1/16决赛']):
+            if kw in current_stage:
+                # Next higher stage
+                if i > 0:
+                    next_kw = ['决赛', '季军赛', '半决赛', '1/4决赛', '1/8决赛', '1/16决赛'][i - 1]
+                    next_base = STAGE_WEIGHTS[next_kw]
+                break
+
+        weight = min(base + bonus, next_base - 0.01)
+        return weight
 
     for json_key, static in teams_static.items():
         db_team = _find_db_team(json_key)
@@ -355,9 +399,11 @@ def get_power_ranking(
         else:
             tournament_perf = 0.0
 
+        stage_weight = _get_stage_weight(tid)
+
         # -- Composite: progressive weighting ------------------------------
-        composite = ((1.0 - performance_weight) * baseline
-                     + performance_weight * tournament_perf)
+        composite = ((1.0 - stage_weight) * baseline
+                     + stage_weight * tournament_perf)
 
         # -- Tier classification -------------------------------------------
         if composite >= 8.0:
@@ -398,6 +444,7 @@ def get_power_ranking(
             'elo_score': round(baseline, 2),
             'tournament_score': round(tournament_perf, 2) if played > 0 else 0,
             'composite_score': round(composite, 2),
+            'stage_weight': round(stage_weight, 2),
             'played': played,
             'points': tstats['points'],
             'goals_for': tstats['goals_for'],
