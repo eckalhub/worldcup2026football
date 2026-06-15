@@ -59,6 +59,8 @@ class Match:
     group_stage: str
     lineups_home_en: List[str]
     lineups_away_en: List[str]
+    home_label: str = ""
+    away_label: str = ""
 
 
 @dataclass
@@ -214,6 +216,8 @@ class DongqiudiScraper:
                 group_stage=dm.group_stage,
                 lineups_home_en=[],
                 lineups_away_en=[],
+                home_label=dm.home_label,
+                away_label=dm.away_label,
             ))
 
         logger.info("Scraped %d matches from dongqiudi", len(result))
@@ -355,19 +359,24 @@ class DatabaseStore:
                         home_score   = ?,
                         away_score   = ?,
                         stadium      = ?,
-                        group_stage  = ?
+                        group_stage  = ?,
+                        home_label   = ?,
+                        away_label   = ?
                     WHERE id = ?
                 ''', (status, match.home_score, match.away_score,
-                      match.stadium, match.group_stage, match_id))
+                      match.stadium, match.group_stage,
+                      match.home_label, match.away_label, match_id))
             else:
                 cursor.execute('''
                     INSERT INTO Matches
                         (home_team_id, away_team_id, match_time_utc,
-                         status, home_score, away_score, stadium, group_stage)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                         status, home_score, away_score, stadium, group_stage,
+                         home_label, away_label)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (home_id, away_id, match.match_time_utc,
                       status, match.home_score, match.away_score,
-                      match.stadium, match.group_stage))
+                      match.stadium, match.group_stage,
+                      match.home_label, match.away_label))
                 match_id = cursor.lastrowid
 
             # Track match_id on the Match object for lineup insertion

@@ -45,6 +45,8 @@ class DqMatch:
     away_score: int
     group_stage: str
     dongqiudi_url: str
+    home_label: str = ""
+    away_label: str = ""
     # Filled by _lookup_team_ids
     home_db_id: Optional[int] = None
     away_db_id: Optional[int] = None
@@ -161,18 +163,50 @@ def _find_stage(a_tag, soup) -> str:
 
 
 def _lookup_team_ids(home_zh: str, away_zh: str, db_path: str) -> tuple:
-    """Look up team DB IDs by Chinese name."""
+    """
+    Look up team DB IDs by Chinese name.
+    For knockout placeholders (A2, B1, 胜者...), uses TBD IDs.
+    """
+    TBD_HOME_ID = -1
+    TBD_AWAY_ID = -2
+
     with closing(sqlite3.connect(db_path)) as conn:
-        cur = conn.execute("SELECT id, name FROM Teams WHERE name_zh = ?", (home_zh,))
+        cur = conn.cursor()
+        # Ensure TBD placeholder teams exist
+        cur.execute(
+            "INSERT OR IGNORE INTO Teams (id, name, name_zh, group_name) "
+            "VALUES (?, 'TBD_Home', '待定', '')",
+            (TBD_HOME_ID,),
+        )
+        cur.execute(
+            "INSERT OR IGNORE INTO Teams (id, name, name_zh, group_name) "
+            "VALUES (?, 'TBD_Away', '待定', '')",
+            (TBD_AWAY_ID,),
+        )
+        conn.commit()
+
+        cur.execute("SELECT id, name FROM Teams WHERE name_zh = ?", (home_zh,))
         home_row = cur.fetchone()
-        cur = conn.execute("SELECT id, name FROM Teams WHERE name_zh = ?", (away_zh,))
+        cur.execute("SELECT id, name FROM Teams WHERE name_zh = ?", (away_zh,))
         away_row = cur.fetchone()
-    return (
-        home_row[0] if home_row else None,
-        away_row[0] if away_row else None,
-        home_row[1] if home_row else home_zh,
-        away_row[1] if away_row else away_zh,
-    )
+
+    home_id = home_row[0] if home_row else None
+    away_id = away_row[0] if away_row else None
+    home_en = home_row[1] if home_row else home_zh
+    away_en = away_row[1] if away_row else away_zh
+
+    # Is this a knockout placeholder?
+    is_placeholder = bool(re.match(r'^[A-K]\d+$', home_zh)) or '胜者' in home_zh or '败者' in home_zh
+
+    if is_placeholder:
+        if not home_id:
+            home_id = TBD_HOME_ID
+            home_en = "TBD_Home"
+        if not away_id:
+            away_id = TBD_AWAY_ID
+            away_en = "TBD_Away"
+
+    return home_id, away_id, home_en, away_en
 
 
 def fetch_schedule(db_path: str) -> List[DqMatch]:
@@ -198,67 +232,63 @@ def fetch_schedule(db_path: str) -> List[DqMatch]:
     soup = BeautifulSoup(resp.text, "lxml")
     matches: List[DqMatch] = []
 
-    # Find all section headers and build a stage timeline
-    stage_map = {}  # line_number → stage_name
-    for tag in soup.find_all(["h2", "h3", "h4"]):
-        text = tag.get_text(strip=True)
-        for kw in ["小组赛", "1/16决赛", "1/8决赛", "1/4决赛", "半决赛", "季军赛", "决赛"]:
-            if kw in text and tag.sourceline:
-                stage_map[tag.sourceline] = text
+    # Use DOM structure: each dp-schedule-group contains a title + match cards
+    for group_div in soup.find_all("div", class_="dp-schedule-group"):
+        title_div = group_div.find("div", class_="dp-schedule-group__title")
+        stage_name = title_div.get_text(strip=True) if title_div else ""
 
-    current_stage = ""
+        for a_tag in group_div.find_all("a", class_="dp-schedule-row"):
+            href = a_tag.get("href", "")
+            mid_match = re.search(r"/match/(\d+)", href)
+            if not mid_match:
+                continue
+            match_id = mid_match.group(1)
 
-    for a_tag in soup.find_all("a", class_="dp-schedule-row"):
-        href = a_tag.get("href", "")
-        mid_match = re.search(r"/match/(\d+)", href)
-        if not mid_match:
-            continue
-        match_id = mid_match.group(1)
+            # Primary: parse by CSS classes
+            parsed = _parse_by_classes(a_tag)
+            # Fallback: parse flat text
+            if not parsed or not parsed[3]:
+                flat_text = a_tag.get_text(separator=" ", strip=True)
+                parsed = _parse_flat_text(flat_text)
 
-        # Primary: parse by CSS classes
-        parsed = _parse_by_classes(a_tag)
-        # Fallback: parse flat text
-        if not parsed or not parsed[3]:  # away_zh empty?
-            flat_text = a_tag.get_text(separator=" ", strip=True)
-            parsed = _parse_flat_text(flat_text)
+            if not parsed:
+                logger.warning("Could not parse match card: %s", match_id)
+                continue
 
-        if not parsed:
-            logger.warning("Could not parse match card: %s", match_id)
-            continue
+            dt_str_bj, status, home_zh, away_zh, home_score, away_score = parsed
 
-        dt_str_bj, status, home_zh, away_zh, home_score, away_score = parsed
+            # For knockout placeholders, store raw text as labels
+            is_placeholder = bool(re.match(r'^[A-K]\d+$', home_zh)) or '胜者' in home_zh or '败者' in home_zh
+            home_label = home_zh if is_placeholder else ""
+            away_label = away_zh if is_placeholder else ""
 
-        # Update current stage
-        if a_tag.sourceline:
-            for line_no, stage_name in sorted(stage_map.items()):
-                if line_no < a_tag.sourceline:
-                    current_stage = stage_name
-
-        match = DqMatch(
-            match_id=match_id,
-            match_time_utc=_bj_to_utc(dt_str_bj),
-            match_time_bj=dt_str_bj,
-            status=status,
-            home_team_zh=home_zh,
-            away_team_zh=away_zh,
-            home_score=home_score,
-            away_score=away_score,
-            group_stage=current_stage,
-            dongqiudi_url=f"https://www.dongqiudi.com/match/{match_id}",
-        )
-
-        # Team lookup
-        match.home_db_id, match.away_db_id, match.home_name_en, match.away_name_en = (
-            _lookup_team_ids(home_zh, away_zh, db_path)
-        )
-
-        if match.home_db_id and match.away_db_id:
-            matches.append(match)
-        else:
-            logger.warning(
-                "Team lookup failed: '%s'(%s) vs '%s'(%s) — match %s",
-                home_zh, match.home_db_id, away_zh, match.away_db_id, match_id,
+            match = DqMatch(
+                match_id=match_id,
+                match_time_utc=_bj_to_utc(dt_str_bj),
+                match_time_bj=dt_str_bj,
+                status=status,
+                home_team_zh=home_zh,
+                away_team_zh=away_zh,
+                home_score=home_score,
+                away_score=away_score,
+                group_stage=stage_name,
+                dongqiudi_url=f"https://www.dongqiudi.com/match/{match_id}",
+                home_label=home_label,
+                away_label=away_label,
             )
+
+            # Team lookup
+            match.home_db_id, match.away_db_id, match.home_name_en, match.away_name_en = (
+                _lookup_team_ids(home_zh, away_zh, db_path)
+            )
+
+            if match.home_db_id and match.away_db_id:
+                matches.append(match)
+            else:
+                logger.warning(
+                    "Team lookup failed: '%s'(%s) vs '%s'(%s) — match %s",
+                    home_zh, match.home_db_id, away_zh, match.away_db_id, match_id,
+                )
 
     logger.info("Fetched %d matches from dongqiudi", len(matches))
     return matches
