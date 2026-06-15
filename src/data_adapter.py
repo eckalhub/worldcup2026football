@@ -279,34 +279,34 @@ def _parse_local_date(raw: str) -> str:
 
 def _compute_status(api_finished: str, api_elapsed: str, match_utc: str) -> str:
     """
-    Merge API status fields with a current-time sanity check.
-
-    If the API says 'upcoming' but the match time is hours in the past,
-    override to 'finished'.  If within a 3-hour window, show 'live'.
+    Determine match status.  System UTC is authoritative — API status
+    fields from worldcup26.ir are only trusted when consistent with time.
     """
-    # Trust the API when it has explicitly set a status.
-    if api_finished == "TRUE":
-        return "finished"
-    if api_elapsed not in (None, "notstarted", "", "finished"):
-        return "live"
-
-    # API has no active status — fall back to time-based heuristic.
-    if not match_utc:
-        return "upcoming"
-
+    # Parse match kickoff time
     try:
-        match_dt = datetime.strptime(match_utc, "%Y-%m-%dT%H:%M:%SZ")
-    except ValueError:
+        match_dt = datetime.strptime(match_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
         return "upcoming"
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    diff_hours = (now - match_dt).total_seconds() / 3600
+    now = datetime.now(timezone.utc)
+    diff_minutes = (now - match_dt).total_seconds() / 60
 
-    if diff_hours > 3:
+    # Time-based status using system UTC (authoritative)
+    if diff_minutes > 150:          # > 2.5 hours after kickoff → finished
+        time_status = "finished"
+    elif diff_minutes > -30:        # within 30 min of kickoff, or during match → live
+        time_status = "live"
+    else:
+        time_status = "upcoming"
+
+    # API status: only trusted when consistent with time
+    if api_finished == "TRUE" and diff_minutes > 0:
         return "finished"
-    if diff_hours > -3:
+    if (api_elapsed not in (None, "notstarted", "", "finished")
+            and diff_minutes > -30):
         return "live"
-    return "upcoming"
+
+    return time_status
 
 
 def _parse_scorers(raw: Optional[str]) -> str:
@@ -440,11 +440,11 @@ class DataAdapter:
                         match_utc = _parse_local_date(g.get("local_date", ""))
 
                         # Status: API fields + time-based correction
-                        status = _compute_status(
-                            g.get("finished", "FALSE"),
-                            g.get("time_elapsed", ""),
-                            match_utc,
-                        )
+                        api_finished = g.get("finished", "FALSE")
+                        api_elapsed = g.get("time_elapsed", "")
+                        # Initial status using API time — will be overridden
+                        # with DB's correct time if match exists
+                        status = _compute_status(api_finished, api_elapsed, match_utc)
 
                         home_score = int(g.get("home_score", 0) or 0)
                         away_score = int(g.get("away_score", 0) or 0)
@@ -459,7 +459,7 @@ class DataAdapter:
                         # Look up existing match by team pair (time-agnostic),
                         # so that dongqiudi-set correct UTC times are preserved.
                         cur.execute(
-                            """SELECT id FROM Matches
+                            """SELECT id, match_time_utc FROM Matches
                                WHERE ((home_team_id = ? AND away_team_id = ?)
                                   OR  (home_team_id = ? AND away_team_id = ?))
                                LIMIT 1""",
@@ -467,6 +467,9 @@ class DataAdapter:
                         )
                         row = cur.fetchone()
                         if row:
+                            # Re-compute status using DB's correct UTC time
+                            db_match_utc = row[1]
+                            status = _compute_status(api_finished, api_elapsed, db_match_utc)
                             cur.execute(
                                 """UPDATE Matches
                                    SET status = ?, home_score = ?,
@@ -1037,12 +1040,10 @@ class DataAdapter:
             if not match_utc:
                 continue
 
-            # Status: API fields + time-based correction
-            status = _compute_status(
-                g.get("finished", "FALSE"),
-                g.get("time_elapsed", ""),
-                match_utc,
-            )
+            # Status will be recomputed using DB's correct UTC after lookup
+            api_finished_flag = g.get("finished", "FALSE")
+            api_elapsed_flag = g.get("time_elapsed", "")
+            status = _compute_status(api_finished_flag, api_elapsed_flag, match_utc)
 
             home_score = int(g.get("home_score", 0) or 0)
             away_score = int(g.get("away_score", 0) or 0)
@@ -1059,7 +1060,7 @@ class DataAdapter:
             away_label = g.get("away_team_label", "")
 
             cur.execute(
-                """SELECT id FROM Matches
+                """SELECT id, match_time_utc FROM Matches
                    WHERE ((home_team_id = ? AND away_team_id = ?)
                       OR  (home_team_id = ? AND away_team_id = ?))
                    LIMIT 1""",
@@ -1068,6 +1069,13 @@ class DataAdapter:
             row = cur.fetchone()
 
             if row:
+                # Re-compute status using DB's correct UTC time
+                db_match_utc = row[1]
+                status = _compute_status(
+                    g.get("finished", "FALSE"),
+                    g.get("time_elapsed", ""),
+                    db_match_utc,
+                )
                 cur.execute(
                     """UPDATE Matches
                        SET status = ?, home_score = ?, away_score = ?,
