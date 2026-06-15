@@ -456,11 +456,14 @@ class DataAdapter:
                             group_stage = STAGE_ZH[group_stage]
                         stadium_name = stadium_lookup.get(g.get("stadium_id", ""), "")
 
+                        # Look up existing match by team pair (time-agnostic),
+                        # so that dongqiudi-set correct UTC times are preserved.
                         cur.execute(
                             """SELECT id FROM Matches
-                               WHERE home_team_id = ? AND away_team_id = ?
-                                 AND match_time_utc = ?""",
-                            (home_db_id, away_db_id, match_utc),
+                               WHERE ((home_team_id = ? AND away_team_id = ?)
+                                  OR  (home_team_id = ? AND away_team_id = ?))
+                               LIMIT 1""",
+                            (home_db_id, away_db_id, away_db_id, home_db_id),
                         )
                         row = cur.fetchone()
                         if row:
@@ -470,14 +473,8 @@ class DataAdapter:
                                        away_score = ?, stadium = ?,
                                        group_stage = ?
                                    WHERE id = ?""",
-                                (
-                                    status,
-                                    home_score,
-                                    away_score,
-                                    stadium_name,
-                                    group_stage,
-                                    row[0],
-                                ),
+                                (status, home_score, away_score,
+                                 stadium_name, group_stage, row[0]),
                             )
                             update_count += 1
 
@@ -1063,9 +1060,10 @@ class DataAdapter:
 
             cur.execute(
                 """SELECT id FROM Matches
-                   WHERE home_team_id = ? AND away_team_id = ?
-                     AND match_time_utc = ?""",
-                (home_db_id, away_db_id, match_utc),
+                   WHERE ((home_team_id = ? AND away_team_id = ?)
+                      OR  (home_team_id = ? AND away_team_id = ?))
+                   LIMIT 1""",
+                (home_db_id, away_db_id, away_db_id, home_db_id),
             )
             row = cur.fetchone()
 

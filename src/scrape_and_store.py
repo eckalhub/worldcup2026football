@@ -190,19 +190,34 @@ class DongqiudiScraper:
         ]
 
     def scrape_matches(self) -> List[Match]:
-        """Full match roster scrape (init mode)."""
-        logger.info("Scraping match schedules (init mode)...")
+        """Full match roster scrape from dongqiudi.com (init mode)."""
+        logger.info("Scraping match schedules from dongqiudi...")
         self._random_delay(0.5, 1.5)
 
-        return [
-            Match("United States", "Argentina", "2026-06-15T19:00:00Z",
-                  "upcoming", 0, 0, "MetLife Stadium", "Group A",
-                  ["Christian Pulisic", "Weston McKennie"],
-                  ["Lionel Messi", "Emiliano Martínez"]),
-            Match("France", "Brazil", "2026-06-17T18:00:00Z",
-                  "live", 1, 0, "SoFi Stadium", "Group C",
-                  ["Kylian Mbappé"], ["Vinícius Júnior"]),
-        ]
+        try:
+            from dongqiudi_fetcher import fetch_schedule
+            dq_matches = fetch_schedule(DB_PATH)
+        except Exception as e:
+            logger.error("Dongqiudi fetch failed: %s", e)
+            return []
+
+        result: List[Match] = []
+        for dm in dq_matches:
+            result.append(Match(
+                home_team_name=dm.home_name_en,
+                away_team_name=dm.away_name_en,
+                match_time_utc=dm.match_time_utc,
+                status=dm.status,
+                home_score=dm.home_score,
+                away_score=dm.away_score,
+                stadium="",
+                group_stage=dm.group_stage,
+                lineups_home_en=[],
+                lineups_away_en=[],
+            ))
+
+        logger.info("Scraped %d matches from dongqiudi", len(result))
+        return result
 
     def scrape_broadcasts(self) -> List[Broadcast]:
         logger.info("Scraping broadcast streams...")
