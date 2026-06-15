@@ -179,6 +179,49 @@ def get_power_ranking(
     min_elo = min(all_elos) if all_elos else 1400
     elo_range = max_elo - min_elo if max_elo > min_elo else 1.0
 
+    # Pre-compute market value and FIFA rank bounds
+    all_mv = [t.get('market_value_eur_m', 0) for t in teams_static.values()]
+    max_mv = max(all_mv) if all_mv else 1200.0
+    min_mv = min(all_mv) if all_mv else 0.0
+    mv_range = max_mv - min_mv if max_mv > min_mv else 1.0
+
+    all_fifa = [t.get('fifa_rank', 211) for t in teams_static.values()]
+    max_fifa = max(all_fifa) if all_fifa else 211
+
+    # ── Historical momentum: last 6 World Cups with time-decay ────────────
+    # Half-life = 8 years, exponential decay: e^(-years_since / (half_life / ln(2)))
+    REFERENCE_YEAR = 2026
+    HALF_LIFE = 8.0
+    DECAY_LAMBDA = math.log(2) / HALF_LIFE
+
+    HISTORY_POINTS = {
+        2022: dict(champion='Argentina', runner_up='France', third='Croatia', fourth='Morocco'),
+        2018: dict(champion='France', runner_up='Croatia', third='Belgium', fourth='England'),
+        2014: dict(champion='Germany', runner_up='Argentina', third='Netherlands', fourth='Brazil'),
+        2010: dict(champion='Spain', runner_up='Netherlands', third='Germany', fourth='Uruguay'),
+        2006: dict(champion='Italy', runner_up='France', third='Germany', fourth='Portugal'),
+        2002: dict(champion='Brazil', runner_up='Germany', third='Turkey', fourth='South Korea'),
+    }
+    FINISH_POINTS = {'champion': 10, 'runner_up': 7, 'third': 5, 'fourth': 3}
+
+    def _compute_hist_momentum(json_key: str) -> float:
+        """Time-decayed historical WC performance score (raw, un-normalized)."""
+        score = 0.0
+        for year, finishers in HISTORY_POINTS.items():
+            decay = math.exp(-DECAY_LAMBDA * (REFERENCE_YEAR - year))
+            for place, team_name in finishers.items():
+                if team_name == json_key:
+                    score += FINISH_POINTS[place] * decay
+        return score
+
+    # Pre-compute historical momentum for all teams
+    hist_scores = {}
+    for jk in teams_static:
+        hist_scores[jk] = _compute_hist_momentum(jk)
+    max_hist = max(hist_scores.values()) if hist_scores else 1.0
+    min_hist = min(hist_scores.values()) if hist_scores else 0.0
+    hist_range = max_hist - min_hist if max_hist > min_hist else 1.0
+
     # History tier (display only, NOT in probability calculation)
     def _history_tier(static):
         h = (static['wc_titles'] * 10 + static['wc_finals'] * 6
@@ -333,9 +376,26 @@ def get_power_ranking(
         tid = db_team['id']
         tstats = team_tournament.get(tid, {'played': 0, 'points': 0})
 
-        # -- ELO baseline (0-10) — replaces 5-layer composite ------------
+        # -- Multi-factor baseline (0-10) ----------------------------------
+        # Factor 1: ELO (30%) — current playing strength
         elo = static.get('elo', 1500)
-        baseline = ((elo - min_elo) / elo_range) * 10.0
+        elo_score = ((elo - min_elo) / elo_range) * 10.0
+
+        # Factor 2: Historical momentum (35%) — time-decayed WC pedigree
+        hist_raw = hist_scores.get(json_key, 0.0)
+        hist_score = ((hist_raw - min_hist) / hist_range) * 10.0 if hist_range > 0 else 0.0
+
+        # Factor 3: Market value (20%) — squad depth & talent
+        mv = static.get('market_value_eur_m', 0.0)
+        mv_score = ((mv - min_mv) / mv_range) * 10.0
+
+        # Factor 4: FIFA rank (15%) — official ranking, inverted
+        fifa_rank = static.get('fifa_rank', 211)
+        fifa_score = max(0.0, ((max_fifa - fifa_rank) / max((max_fifa - 1), 1.0)) * 10.0)
+
+        # Weighted baseline
+        baseline = (0.30 * elo_score + 0.35 * hist_score
+                    + 0.20 * mv_score + 0.15 * fifa_score)
 
         # -- History tier badge (display only, zero impact on probability) -
         hist_tier = _history_tier(static)
@@ -441,7 +501,10 @@ def get_power_ranking(
             'flag_url': db_team['flag_url'],
             'group_name': db_team.get('group_name', ''),
             'elo_rating': elo,
-            'elo_score': round(baseline, 2),
+            'elo_score': round(elo_score, 2),
+            'hist_momentum_score': round(hist_score, 2),
+            'market_value_score': round(mv_score, 2),
+            'fifa_rank_score': round(fifa_score, 2),
             'tournament_score': round(tournament_perf, 2) if played > 0 else 0,
             'composite_score': round(composite, 2),
             'stage_weight': round(stage_weight, 2),

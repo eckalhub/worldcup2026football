@@ -468,9 +468,11 @@ function renderPowerRanking() {
     html += '<thead><tr style="color:var(--text-muted);border-bottom:2px solid rgba(255,255,255,0.1);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;">';
     html += '<th style="padding:12px 8px;text-align:center;min-width:40px;">#</th>';
     html += '<th style="padding:12px 8px;text-align:left;min-width:160px;">球队</th>';
-    html += '<th style="padding:12px 8px;text-align:center;min-width:60px;">ELO<br>评级</th>';
-    html += '<th style="padding:12px 8px;text-align:center;min-width:60px;">底蕴</th>';
-    html += '<th style="padding:12px 8px;text-align:center;min-width:60px;">ELO<br>得分</th>';
+    html += '<th style="padding:12px 8px;text-align:center;min-width:50px;">ELO</th>';
+    html += '<th style="padding:12px 8px;text-align:center;min-width:60px;">历史<br>动量</th>';
+    html += '<th style="padding:12px 8px;text-align:center;min-width:50px;">身价</th>';
+    html += '<th style="padding:12px 8px;text-align:center;min-width:50px;">FIFA</th>';
+    html += '<th style="padding:12px 8px;text-align:center;min-width:50px;">底蕴</th>';
     html += '<th style="padding:12px 8px;text-align:left;min-width:140px;">夺冠概率</th>';
     html += '</tr></thead><tbody>';
 
@@ -510,8 +512,19 @@ function renderPowerRanking() {
         if (r.eliminated) html += '<span style="color:var(--accent-red);font-size:0.65rem;margin-left:4px;">已淘汰</span>';
         html += '</td>';
         html += '<td style="padding:10px 8px;text-align:center;color:var(--text-muted);">' + (r.elo_rating || '-') + '</td>';
+        // Historical momentum score (0-10, color coded)
+        var histScore = r.hist_momentum_score || 0;
+        var histColor = histScore > 7 ? 'var(--accent-green)' : histScore > 3 ? 'var(--accent-blue)' : 'var(--text-muted)';
+        html += '<td style="padding:10px 8px;text-align:center;color:' + histColor + ';">' + histScore.toFixed(1) + '</td>';
+        // Market value score
+        var mvScore = r.market_value_score || 0;
+        var mvColor = mvScore > 7 ? 'var(--accent-green)' : mvScore > 3 ? 'var(--accent-blue)' : 'var(--text-muted)';
+        html += '<td style="padding:10px 8px;text-align:center;color:' + mvColor + ';">' + mvScore.toFixed(1) + '</td>';
+        // FIFA rank score
+        var fifaScore = r.fifa_rank_score || 0;
+        var fifaColor = fifaScore > 8 ? 'var(--accent-green)' : fifaScore > 5 ? 'var(--accent-blue)' : 'var(--text-muted)';
+        html += '<td style="padding:10px 8px;text-align:center;color:' + fifaColor + ';">' + fifaScore.toFixed(1) + '</td>';
         html += '<td style="padding:10px 8px;text-align:center;color:var(--text-muted);font-size:0.8rem;">' + (r.history_badge || '-') + '</td>';
-        html += '<td style="padding:10px 8px;text-align:center;font-weight:700;' + (r.elo_score >= 8 ? 'color:var(--accent-green);' : r.elo_score >= 6 ? 'color:var(--accent-blue);' : '') + '">' + r.elo_score + '</td>';
         html += '<td style="padding:10px 8px;">';
         html += '<div style="display:flex;align-items:center;">';
         html += '<span style="min-width:50px;text-align:right;font-weight:700;' + (probPct > 10 ? 'color:var(--accent-green);' : probPct > 0 ? 'color:var(--text-muted);' : 'color:var(--accent-red);') + '">' + (probPct > 0 ? probPct.toFixed(1) + '%' : '0%') + '</span>';
