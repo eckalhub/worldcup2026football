@@ -45,7 +45,7 @@
 ![晋级树图](doc/snap_168421.png)
 
 ### 🥇 射手榜
-按进球数实时排序：
+实时进球排名，数据来自 worldcup26.ir API。展示球员头像、中英文名、所属球队、进球数，点击可查看球员详情弹窗（含 Wikipedia 传记和 TheSportsDB 高清头像）：
 
 ![射手榜](doc/snap_ss.png)
 
@@ -53,6 +53,8 @@
 2002–2022 六届冠亚季殿军，含金球奖与金靴奖：
 
 ![历届冠军](doc/snap_number1_hst.png)
+
+> **截图文件对应**：`snap_number1.png` 夺冠热门 | `snap_number1_hst.png` 历届冠军 | `snap_doing.png` 赛事看板 | `snap_total.png` 积分榜 | `snap_all_rate.png` 全部排期 | `snap_168421.png` 晋级树 | `snap_ss.png` 射手榜
 
 ## 技术栈
 
