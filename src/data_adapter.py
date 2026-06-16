@@ -874,7 +874,11 @@ class DataAdapter:
     def sync_broadcasts(self) -> bool:
         """
         Ensure every match in the database has a full set of broadcast
-        platform links.  Idempotent — existing entries are left untouched.
+        platform links.  Idempotent — existing entries are left untouched
+        unless a per-match direct URL is available (dongqiudi).
+
+        Performance: loads all existing Broadcasts in one SELECT, then
+        diffs in-memory to minimise round-trips (O(1) queries vs O(n²)).
         """
         try:
             with closing(self._conn()) as conn:
@@ -888,33 +892,69 @@ class DataAdapter:
                     if orphaned:
                         logger.info("Removed %d orphaned broadcast(s).", orphaned)
 
-                    # Get all match IDs
-                    cur.execute("SELECT id FROM Matches")
-                    match_ids = [row[0] for row in cur.fetchall()]
+                    # ── Batch-load existing state ──────────────────────────
+                    # Load all matches with dongqiudi_url
+                    cur.execute("SELECT id, dongqiudi_url FROM Matches")
+                    match_urls = {row[0]: row[1] for row in cur.fetchall()}
 
-                    added = 0
-                    for mid in match_ids:
+                    # Load all existing Broadcasts into a (match_id, platform) lookup
+                    cur.execute(
+                        "SELECT id, match_id, platform_name, stream_url, dongqiudi_url "
+                        "FROM Broadcasts"
+                    )
+                    existing_bc: dict = {}
+                    for row in cur.fetchall():
+                        existing_bc[(row[1], row[2])] = {
+                            "id": row[0], "stream_url": row[3], "dongqiudi_url": row[4],
+                        }
+
+                    # ── In-memory diff & batch-write ───────────────────────
+                    inserts: list = []
+                    updates: list = []
+
+                    for mid, dq_url in match_urls.items():
                         for plat in self.BROADCAST_PLATFORMS:
-                            cur.execute(
-                                "SELECT id FROM Broadcasts "
-                                "WHERE match_id = ? AND platform_name = ?",
-                                (mid, plat["name"]),
-                            )
-                            if cur.fetchone():
-                                continue  # already exists
-                            cur.execute(
-                                "INSERT INTO Broadcasts "
-                                "(match_id, platform_name, stream_url, icon_url) "
-                                "VALUES (?, ?, ?, ?)",
-                                (mid, plat["name"], plat["url"], plat["icon"]),
-                            )
-                            added += 1
+                            # Determine URL: use per-match URL for 懂球帝 if available
+                            if plat["name"] == "懂球帝" and dq_url:
+                                stream_url = dq_url
+                            else:
+                                stream_url = plat["url"]
+
+                            existing = existing_bc.get((mid, plat["name"]))
+                            if existing:
+                                needs_update = (
+                                    existing["stream_url"] != stream_url
+                                    or (dq_url and existing["dongqiudi_url"] != dq_url)
+                                )
+                                if needs_update:
+                                    updates.append((stream_url, dq_url, existing["id"]))
+                            else:
+                                inserts.append(
+                                    (mid, plat["name"], stream_url, plat["icon"], dq_url)
+                                )
+
+                    # Execute batch INSERTs
+                    if inserts:
+                        cur.executemany(
+                            "INSERT INTO Broadcasts "
+                            "(match_id, platform_name, stream_url, icon_url, dongqiudi_url) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            inserts,
+                        )
+
+                    # Execute batch UPDATEs
+                    if updates:
+                        cur.executemany(
+                            "UPDATE Broadcasts SET stream_url = ?, dongqiudi_url = ? "
+                            "WHERE id = ?",
+                            updates,
+                        )
 
                 conn.commit()
 
             logger.info(
-                "Broadcast sync: %d new entries across %d match(es) × %d platform(s).",
-                added, len(match_ids), len(self.BROADCAST_PLATFORMS),
+                "Broadcast sync: %d new + %d updated across %d match(es) × %d platform(s).",
+                len(inserts), len(updates), len(match_urls), len(self.BROADCAST_PLATFORMS),
             )
             return True
         except sqlite3.Error as e:

@@ -109,10 +109,12 @@ def init_db() -> bool:
                         away_score INTEGER DEFAULT 0,
                         stadium TEXT,
                         group_stage TEXT,
+                        dongqiudi_url TEXT,
                         FOREIGN KEY(home_team_id) REFERENCES Teams(id) ON DELETE RESTRICT,
                         FOREIGN KEY(away_team_id) REFERENCES Teams(id) ON DELETE RESTRICT
                     )
                 ''')
+                _safe_add_column(cursor, "Matches", "dongqiudi_url", "TEXT")
 
                 # ── Broadcasts ─────────────────────────────────────────────
                 logger.info("Initializing Broadcasts table...")
@@ -123,9 +125,11 @@ def init_db() -> bool:
                         platform_name TEXT NOT NULL,
                         stream_url TEXT NOT NULL,
                         icon_url TEXT,
+                        dongqiudi_url TEXT,
                         FOREIGN KEY(match_id) REFERENCES Matches(id) ON DELETE CASCADE
                     )
                 ''')
+                _safe_add_column(cursor, "Broadcasts", "dongqiudi_url", "TEXT")
 
                 # ── MatchLineups ───────────────────────────────────────────
                 logger.info("Initializing MatchLineups table...")

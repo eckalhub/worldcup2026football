@@ -61,6 +61,7 @@ class Match:
     lineups_away_en: List[str]
     home_label: str = ""
     away_label: str = ""
+    dongqiudi_url: str = ""
 
 
 @dataclass
@@ -218,6 +219,7 @@ class DongqiudiScraper:
                 lineups_away_en=[],
                 home_label=dm.home_label,
                 away_label=dm.away_label,
+                dongqiudi_url=dm.dongqiudi_url,
             ))
 
         logger.info("Scraped %d matches from dongqiudi", len(result))
@@ -355,28 +357,31 @@ class DatabaseStore:
                 match_id = row[0]
                 cursor.execute('''
                     UPDATE Matches SET
-                        status       = ?,
-                        home_score   = ?,
-                        away_score   = ?,
-                        stadium      = ?,
-                        group_stage  = ?,
-                        home_label   = ?,
-                        away_label   = ?
+                        status        = ?,
+                        home_score    = ?,
+                        away_score    = ?,
+                        stadium       = ?,
+                        group_stage   = ?,
+                        home_label    = ?,
+                        away_label    = ?,
+                        dongqiudi_url = ?
                     WHERE id = ?
                 ''', (status, match.home_score, match.away_score,
                       match.stadium, match.group_stage,
-                      match.home_label, match.away_label, match_id))
+                      match.home_label, match.away_label,
+                      match.dongqiudi_url, match_id))
             else:
                 cursor.execute('''
                     INSERT INTO Matches
                         (home_team_id, away_team_id, match_time_utc,
                          status, home_score, away_score, stadium, group_stage,
-                         home_label, away_label)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         home_label, away_label, dongqiudi_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (home_id, away_id, match.match_time_utc,
                       status, match.home_score, match.away_score,
                       match.stadium, match.group_stage,
-                      match.home_label, match.away_label))
+                      match.home_label, match.away_label,
+                      match.dongqiudi_url))
                 match_id = cursor.lastrowid
 
             # Track match_id on the Match object for lineup insertion
@@ -477,6 +482,7 @@ def main() -> None:
             adapter = DataAdapter(DB_PATH)
             adapter.sync_matches(api)
             adapter.sync_scorers(api)
+            adapter.sync_broadcasts()
             logger.info("Update pipeline finished successfully.")
         except Exception as e:
             logger.error("Update pipeline failed: %s", e)

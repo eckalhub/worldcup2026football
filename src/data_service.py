@@ -50,41 +50,40 @@ def get_all_data() -> Dict[str, Any]:
                 ''')
                 match_lineups_data = cursor.fetchall()
 
-                # Process matches
+                # Pre-build lookups for O(1) access (avoid O(n²) scans below)
+                match_by_id = {m['id']: m for m in matches}
+
+                # team_id → [player_id, ...]  (built once, reused by every match)
+                team_players: dict = {}
+                for pid, p in players.items():
+                    tid = p['team_id']
+                    team_players.setdefault(tid, []).append(pid)
+
+                # Initialise per-match lists
                 for m in matches:
                     m['home_lineup'] = []
                     m['away_lineup'] = []
-                    m['home_squad'] = []
-                    m['away_squad'] = []
-                    
-                    # Squads
-                    for p in players.values():
-                        if p['team_id'] == m['home_team_id']:
-                            m['home_squad'].append(p['id'])
-                        elif p['team_id'] == m['away_team_id']:
-                            m['away_squad'].append(p['id'])
+                    m['home_squad'] = team_players.get(m['home_team_id'], [])
+                    m['away_squad'] = team_players.get(m['away_team_id'], [])
 
-                # Lineups assignment
+                # Lineups assignment — O(1) per row via match_by_id dict
                 for row in match_lineups_data:
                     mid = row['match_id']
-                    pid = row['player_id']
-                    is_starter = row['is_starter']
-                    match_obj = next((x for x in matches if x['id'] == mid), None)
-                    if match_obj:
-                        lineup_entry = {"id": pid, "is_starter": is_starter}
-                        if row['team_id'] == row['home_team_id']:
-                            match_obj['home_lineup'].append(lineup_entry)
-                        else:
-                            match_obj['away_lineup'].append(lineup_entry)
-                
+                    match_obj = match_by_id.get(mid)
+                    if not match_obj:
+                        continue
+                    lineup_entry = {"id": row['player_id'], "is_starter": row['is_starter']}
+                    if row['team_id'] == row['home_team_id']:
+                        match_obj['home_lineup'].append(lineup_entry)
+                    else:
+                        match_obj['away_lineup'].append(lineup_entry)
+
                 # Broadcasts
-                cursor.execute('SELECT match_id, platform_name, stream_url FROM Broadcasts')
-                broadcasts = {}
+                cursor.execute('SELECT match_id, platform_name, stream_url, dongqiudi_url FROM Broadcasts')
+                broadcasts: dict = {}
                 for row in cursor.fetchall():
                     mid = row['match_id']
-                    if mid not in broadcasts:
-                        broadcasts[mid] = []
-                    broadcasts[mid].append(dict(row))
+                    broadcasts.setdefault(mid, []).append(dict(row))
 
         return {
             "teams": teams,

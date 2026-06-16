@@ -76,6 +76,8 @@ async function loadData() {
         const json = await res.json();
         if(json.status === 'success') {
             globalData = json.data;
+            globalData.playerRatings = globalData.playerRatings || {};
+            globalData.powerRanking = globalData.powerRanking || [];
             console.log('loadData: success, teams=' + Object.keys(json.data.teams).length + ' players=' + Object.keys(json.data.players).length + ' matches=' + json.data.matches.length);
             renderAll();
         } else {
