@@ -85,8 +85,12 @@ def api_power_ranking():
 @app.route('/api/player_ratings')
 def api_player_ratings():
     try:
-        ratings = get_player_ratings()
-        return jsonify({"status": "success", "ratings": ratings})
+        result = get_player_ratings()
+        return jsonify({
+            "status": "success",
+            "ratings": result['ratings'],
+            "ranking": result['ranking'],
+        })
     except Exception as e:
         logger.error("Error computing player ratings: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500

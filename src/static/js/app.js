@@ -161,8 +161,10 @@ async function loadPlayerRatings() {
         var json = await res.json();
         if (json.status === 'success') {
             globalData.playerRatings = json.ratings;
+            globalData.playerRanking = json.ranking;
             renderMatches('live');
             renderMatches('all');
+            renderPlayerRatings();
         }
     } catch(e) {}
 }
@@ -762,4 +764,95 @@ document.addEventListener('DOMContentLoaded', function() {
             startTimers(val);
         });
     }
+}
+
+function renderPlayerRatings() {
+    var container = document.getElementById('player-ratings-container');
+    if (!container) return;
+    var ranking = globalData.playerRanking || [];
+    if (!ranking.length) {
+        container.innerHTML = '<div style="text-align:center;padding:50px;color:var(--text-muted);">评分数据加载中...</div>';
+        return;
+    }
+
+    // Search / position filter
+    var search = (document.getElementById('ratings-search') || {}).value || '';
+    var posFilter = (document.getElementById('ratings-pos') || {}).value || '';
+    var filtered = ranking.filter(function(p) {
+        if (posFilter && p.position !== posFilter) return false;
+        if (search) {
+            var q = search.toLowerCase();
+            return (p.name_zh && p.name_zh.toLowerCase().indexOf(q) >= 0)
+                || (p.name_en && p.name_en.toLowerCase().indexOf(q) >= 0)
+                || (p.team_name_zh && p.team_name_zh.toLowerCase().indexOf(q) >= 0);
+        }
+        return true;
+    });
+
+    // Update count
+    var countEl = document.getElementById('ratings-count');
+    if (countEl) countEl.textContent = '显示 ' + filtered.length + ' / ' + ranking.length + ' 名球员';
+
+    var html = '<div class="match-card" style="overflow-x:auto;padding:0;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
+    html += '<thead><tr style="color:var(--text-muted);border-bottom:2px solid rgba(255,255,255,0.1);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.5px;">';
+    html += '<th style="padding:10px 6px;text-align:center;min-width:30px;">#</th>';
+    html += '<th style="padding:10px 6px;text-align:center;min-width:50px;">评分</th>';
+    html += '<th style="padding:10px 6px;text-align:center;min-width:36px;"></th>';
+    html += '<th style="padding:10px 8px;text-align:left;min-width:90px;">中文名</th>';
+    html += '<th style="padding:10px 8px;text-align:left;min-width:100px;">英文名</th>';
+    html += '<th style="padding:10px 6px;text-align:left;min-width:80px;">球队</th>';
+    html += '<th style="padding:10px 6px;text-align:center;min-width:40px;">位置</th>';
+    html += '<th style="padding:10px 6px;text-align:center;min-width:40px;">号码</th>';
+    html += '<th style="padding:10px 6px;text-align:center;min-width:40px;">进球</th>';
+    html += '<th style="padding:10px 6px;text-align:center;min-width:40px;">助攻</th>';
+    html += '</tr></thead><tbody>';
+
+    for (var i = 0; i < filtered.length; i++) {
+        var p = filtered[i];
+        var rank = i + 1;
+
+        // Rating badge color
+        var r = p.rating || 0;
+        var badgeColor, badgeGlow;
+        if (r >= 85)       { badgeColor = '#00ff55'; badgeGlow = '0 0 10px rgba(0,255,100,0.9)'; }
+        else if (r >= 75)  { badgeColor = '#00e6be'; badgeGlow = '0 0 6px rgba(0,230,190,0.5)'; }
+        else if (r >= 65)  { badgeColor = '#ffb900'; badgeGlow = '0 0 3px rgba(255,185,0,0.25)'; }
+        else if (r >= 55)  { badgeColor = '#cc8800'; badgeGlow = '0 0 2px rgba(200,140,0,0.15)'; }
+        else               { badgeColor = '#aa4444'; badgeGlow = 'none'; }
+
+        // Medal borders for top 3
+        var rowStyle = '';
+        if (rank === 1) rowStyle = 'border-left:3px solid #FFD700;background:rgba(255,215,0,0.06);';
+        else if (rank === 2) rowStyle = 'border-left:3px solid #C0C0C0;background:rgba(192,192,192,0.04);';
+        else if (rank === 3) rowStyle = 'border-left:3px solid #CD7F32;background:rgba(205,127,50,0.04);';
+
+        // Avatar
+        var avatarHtml = '';
+        if (p.profile_url && p.profile_url !== '#') {
+            avatarHtml = '<img src="' + esc(p.profile_url) + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.1);" onerror="this.style.display=\'none\'">';
+        } else {
+            avatarHtml = '<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:0.7rem;">' + (p.position || '?') + '</div>';
+        }
+
+        // Team flag
+        var flagHtml = p.team_flag ? '<img src="' + esc(p.team_flag) + '" style="width:18px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;">' : '';
+
+        html += '<tr style="' + rowStyle + 'border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer;" onclick="showPlayer(' + p.player_id + ')" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'' + (rank <= 3 ? (rowStyle.match(/background:[^;]+/) || [])[0] || '' : '') + '\'">';
+        html += '<td style="padding:8px 6px;text-align:center;font-weight:700;font-size:0.9rem;">' + rank + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center;"><span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;clip-path:polygon(30% 0%,70% 0%,100% 30%,100% 70%,70% 100%,30% 100%,0% 70%,0% 30%);background:rgba(255,255,255,0.08);color:' + badgeColor + ';font-weight:900;font-size:0.85rem;text-shadow:' + badgeGlow + ';">' + r + '</span></td>';
+        html += '<td style="padding:8px 6px;text-align:center;">' + avatarHtml + '</td>';
+        html += '<td style="padding:8px;font-weight:600;">' + esc(p.name_zh || '') + '</td>';
+        html += '<td style="padding:8px;color:var(--text-muted);font-size:0.75rem;">' + esc(p.name_en || '') + '</td>';
+        html += '<td style="padding:8px 6px;font-size:0.8rem;">' + flagHtml + esc(p.team_name_zh || '') + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center;font-size:0.75rem;color:var(--text-muted);">' + esc(p.position || '') + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center;color:var(--text-muted);">' + (p.jersey_number || '-') + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center;font-weight:600;' + (p.tournament_goals > 0 ? 'color:var(--accent-green);' : 'color:var(--text-muted);') + '">' + (p.tournament_goals || 0) + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center;' + (p.tournament_assists > 0 ? 'color:var(--accent-blue);' : 'color:var(--text-muted);') + '">' + (p.tournament_assists || 0) + '</td>';
+        html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
 });
+
+window.addEventListener('DOMContentLoaded', function() {

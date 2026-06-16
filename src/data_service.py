@@ -573,8 +573,9 @@ def get_player_ratings(db_path: str = DB_PATH) -> Dict[int, int]:
             with closing(conn.cursor()) as cur:
                 cur.execute(
                     "SELECT p.id, p.team_id, p.name_en, p.name_zh, p.position, "
-                    "p.description, p.tournament_goals, p.tournament_assists, "
-                    "t.name as team_name "
+                    "p.jersey_number, p.profile_url, p.description, "
+                    "p.tournament_goals, p.tournament_assists, "
+                    "t.name as team_name, t.name_zh as team_name_zh, t.flag_url as team_flag "
                     "FROM Players p JOIN Teams t ON p.team_id = t.id"
                 )
                 players = [dict(row) for row in cur.fetchall()]
@@ -617,6 +618,7 @@ def get_player_ratings(db_path: str = DB_PATH) -> Dict[int, int]:
         }
 
         ratings: Dict[int, int] = {}
+        ranking: List[Dict[str, Any]] = []
         for p in players:
             pid = p['id']
             name_en = p['name_en'] or ''
@@ -643,7 +645,25 @@ def get_player_ratings(db_path: str = DB_PATH) -> Dict[int, int]:
             rating = max(25, min(99, rating))
             ratings[pid] = rating
 
-        return ratings
+            ranking.append({
+                'player_id': pid,
+                'name_en': p['name_en'] or '',
+                'name_zh': p['name_zh'] or '',
+                'position': pos or '',
+                'jersey_number': p['jersey_number'],
+                'profile_url': p['profile_url'] or '',
+                'team_name': team_name,
+                'team_name_zh': p['team_name_zh'] or '',
+                'team_flag': p['team_flag'] or '',
+                'tournament_goals': goals,
+                'tournament_assists': assists,
+                'rating': rating,
+            })
+
+        # Sort descending by rating
+        ranking.sort(key=lambda x: x['rating'], reverse=True)
+
+        return {'ratings': ratings, 'ranking': ranking}
 
     except sqlite3.Error as e:
         logger.error("Player rating DB error: %s", e)

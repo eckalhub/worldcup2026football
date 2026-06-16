@@ -79,6 +79,9 @@
             <a href="#" class="tree-link" onclick="switchView('history', this)">
                 <span class="tree-icon">👑</span> 历届冠军
             </a>
+            <a href="#" class="tree-link" onclick="switchView('ratings', this)">
+                <span class="tree-icon">⚔️</span> 球员武力值
+            </a>
         </div>
     </nav>
     <div style="padding: 15px 20px; border-top: 1px solid rgba(255,255,255,0.05);">
@@ -169,6 +172,26 @@
                 近 20 年 6 届世界杯前四名。传统豪门与新贵黑马的交织。
             </p>
             <div id="history-container"></div>
+        </div>
+    </div>
+    <div id="view-ratings" class="view-section">
+        <div class="container" style="max-width: 1100px;">
+            <h2 style="color: var(--text-muted); margin-top: 0; margin-bottom: 10px;">⚔️ 球员武力值排名</h2>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 15px;">
+                基于球队 ELO × 位置调整 × 球星加成 × 赛会表现的综合评分（0-100）。点击查看球员详情。
+            </p>
+            <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
+                <input id="ratings-search" type="text" placeholder="搜索球员姓名..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid rgba(255,255,255,0.1); border-radius:8px; background:rgba(255,255,255,0.05); color:#fff; font-size:0.85rem;" oninput="renderPlayerRatings()">
+                <select id="ratings-pos" onchange="renderPlayerRatings()" style="padding:8px 12px; border:1px solid rgba(255,255,255,0.1); border-radius:8px; background:rgba(255,255,255,0.05); color:#fff; font-size:0.85rem;">
+                    <option value="">全部位置</option>
+                    <option value="FW">FW 前锋</option>
+                    <option value="MF">MF 中场</option>
+                    <option value="DF">DF 后卫</option>
+                    <option value="GK">GK 门将</option>
+                </select>
+                <span id="ratings-count" style="color:var(--text-muted); font-size:0.8rem; align-self:center;"></span>
+            </div>
+            <div id="player-ratings-container"></div>
         </div>
     </div>
 </main>
