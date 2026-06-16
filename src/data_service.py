@@ -667,4 +667,4 @@ def get_player_ratings(db_path: str = DB_PATH) -> Dict[int, int]:
 
     except sqlite3.Error as e:
         logger.error("Player rating DB error: %s", e)
-        return {}
+        return {'ratings': {}, 'ranking': []}

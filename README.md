@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-8 大核心视图，完整覆盖赛程生命周期：
+9 大核心视图，完整覆盖赛程生命周期：
 
 | 视图 | 说明 |
 |---|---|
@@ -15,6 +15,7 @@
 | 小组积分榜 | 12 个小组实时排名（胜/平/负/净胜球/积分） |
 | 射手榜 | 按进球数排序的实时射手榜 |
 | 夺冠热门 | 多因子概率模型（ELO + 时衰减历史动量 + 身价 + FIFA 排名） |
+| 球员武力值 | 1,276 名球员综合评分排名（ELO×位置×球星×赛会表现） |
 | 历届冠军 | 2002-2022 六届世界杯回顾 |
 
 ## 截图预览
@@ -49,12 +50,17 @@
 
 ![射手榜](doc/snap_ss.png)
 
+### ⚔️ 球员武力值排名
+基于球队 ELO × 位置调整 × 球星加成 × 赛会表现的综合评分（0-100），支持搜索与位置筛选：
+
+![球员武力值](doc/snap_wulizhi.png)
+
 ### 👑 历届世界杯冠军
 2002–2022 六届冠亚季殿军，含金球奖与金靴奖：
 
 ![历届冠军](doc/snap_number1_hst.png)
 
-> **截图文件对应**：`snap_number1.png` 夺冠热门 | `snap_number1_hst.png` 历届冠军 | `snap_doing.png` 赛事看板 | `snap_total.png` 积分榜 | `snap_all_rate.png` 全部排期 | `snap_168421.png` 晋级树 | `snap_ss.png` 射手榜
+> **截图文件对应**：`snap_number1.png` 夺冠热门 | `snap_number1_hst.png` 历届冠军 | `snap_doing.png` 赛事看板 | `snap_total.png` 积分榜 | `snap_all_rate.png` 全部排期 | `snap_168421.png` 晋级树 | `snap_ss.png` 射手榜 | `snap_wulizhi.png` 球员武力值
 
 ## 技术栈
 

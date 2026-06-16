@@ -764,7 +764,7 @@ document.addEventListener('DOMContentLoaded', function() {
             startTimers(val);
         });
     }
-}
+});
 
 function renderPlayerRatings() {
     var container = document.getElementById('player-ratings-container');
@@ -853,6 +853,4 @@ function renderPlayerRatings() {
     }
     html += '</tbody></table></div>';
     container.innerHTML = html;
-});
-
-window.addEventListener('DOMContentLoaded', function() {
+}
