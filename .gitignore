@@ -3,6 +3,7 @@
 
 # ── SQLite database files (runtime artifacts) ─────────────────────────────
 *.db
+!worldcup2026.db
 
 # ── Environment configuration (contains credentials) ──────────────────────
 .env
