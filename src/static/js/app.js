@@ -188,7 +188,7 @@ function renderMatches(type) {
         return;
     }
     
-    // Countdown logic for 'live'
+    // Countdown logic for 'live'  — 每秒刷新, 归零后自动重载数据
     if (type === 'live') {
         const upcoming = matches.filter(m => m.status === 'upcoming').sort((a,b) => new Date(a.match_time_utc) - new Date(b.match_time_utc));
         if(upcoming.length > 0) {
@@ -196,11 +196,21 @@ function renderMatches(type) {
             window.countdownInterval && clearInterval(window.countdownInterval);
             window.countdownInterval = setInterval(() => {
                 const distance = targetDate - new Date().getTime();
-                if (distance < 0) return;
-                const h = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const el = document.getElementById('countdown-container');
+                if (!el) { clearInterval(window.countdownInterval); return; }
+                if (distance <= 0) {
+                    el.innerHTML = '<div class="countdown" style="margin:0; padding:8px 15px; font-size:1rem;">⚽ 比赛已开始，正在刷新...</div>';
+                    clearInterval(window.countdownInterval);
+                    loadData();  // 比赛开始, 自动拉取最新数据
+                    return;
+                }
+                const h = Math.floor(distance / (1000 * 60 * 60));
                 const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
                 const s = Math.floor((distance % (1000 * 60)) / 1000);
-                document.getElementById('countdown-container').innerHTML = `<div class="countdown" style="margin:0; padding:8px 15px; font-size:1rem;">下场开赛：${h}小时 ${m}分钟 ${s}秒</div>`;
+                const pad = n => String(n).padStart(2, '0');
+                el.innerHTML = '<div class="countdown" style="margin:0; padding:8px 15px; font-size:1rem;">'
+                    + '下场开赛：' + pad(h) + ':' + pad(m) + ':' + pad(s)
+                    + '</div>';
             }, 1000);
         }
     }

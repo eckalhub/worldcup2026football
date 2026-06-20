@@ -18,6 +18,16 @@ import logging
 import sys
 import os
 import json
+
+
+def _safe_int(val, default: int = 0) -> int:
+    """Convert value to int, handling None, 'null', and other non-numeric strings."""
+    if val is None or val == "null":
+        return default
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
 import time
 import re
 import base64
@@ -446,8 +456,8 @@ class DataAdapter:
                         # with DB's correct time if match exists
                         status = _compute_status(api_finished, api_elapsed, match_utc)
 
-                        home_score = int(g.get("home_score", 0) or 0)
-                        away_score = int(g.get("away_score", 0) or 0)
+                        home_score = _safe_int(g.get("home_score"))
+                        away_score = _safe_int(g.get("away_score"))
                         group_stage = g.get("group", "")
                         # Normalize: "Group A" → "A", "Group C" → "C"
                         if group_stage.startswith("Group "):
@@ -657,7 +667,7 @@ class DataAdapter:
 
                     # Map TSD position to short code, extract jersey number
                     tsd_position = self._map_tsd_position(p.get("strPosition", ""))
-                    jersey_num = int(p.get("strNumber", 0) or 0)
+                    jersey_num = _safe_int(p.get("strNumber"))
 
                     # Build a JSON blob for large images and metadata
                     extra = json.dumps({
@@ -1085,8 +1095,8 @@ class DataAdapter:
             api_elapsed_flag = g.get("time_elapsed", "")
             status = _compute_status(api_finished_flag, api_elapsed_flag, match_utc)
 
-            home_score = int(g.get("home_score", 0) or 0)
-            away_score = int(g.get("away_score", 0) or 0)
+            home_score = _safe_int(g.get("home_score"))
+            away_score = _safe_int(g.get("away_score"))
             group_stage = g.get("group", "")
             # Normalize: "Group A" → "A", "Group C" → "C"
             if group_stage.startswith("Group "):
