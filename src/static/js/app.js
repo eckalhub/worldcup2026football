@@ -260,8 +260,8 @@ function renderMatches(type) {
                 + '<span style="color:#fff;font-size:0.62rem;font-weight:900;text-shadow:0 1px 2px rgba(0,0,0,0.5);line-height:1;">' + (rating || '?') + '</span>'
                 + '</span>'
                 + '<div style="line-height:1.2;">'
-                + '<span style="font-size:0.85rem;">' + esc(p.name_zh) + '</span>'
-                + '<br><span style="font-size:0.65rem;color:var(--text-muted);">' + esc(p.name_en) + '</span>'
+                + '<span style="font-size:0.85rem;">' + esc(p.name_en) + '</span>'
+                + (p.name_zh && p.name_zh !== p.name_en ? '<br><span style="font-size:0.65rem;color:var(--text-muted);">' + esc(p.name_zh) + '</span>' : '')
                 + '</div></span>';
         }
         // Always show player chips: prefer lineups if available, fallback to squads
@@ -418,13 +418,26 @@ function renderScorers() {
                 <div style="font-size:1.3rem; font-weight:bold; width:28px; color:var(--text-muted); text-align:center;">${idx+1}</div>
                 ${imgTag}
                 <div>
-                    <div style="font-weight:bold; font-size:0.95rem;">${esc(p.name_zh)} <span style="font-size:0.7rem; color:var(--text-muted);">${esc(teamName)}</span></div>
-                    <div style="font-size:0.75rem; color:var(--text-muted)">${esc(p.name_en)}</div>
+                    <div style="font-weight:bold; font-size:0.95rem;">${esc(p.name_en)} <span style="font-size:0.7rem; color:var(--text-muted);">${esc(teamName)}</span></div>
+                    ${(p.name_zh && p.name_zh !== p.name_en) ? `<div style="font-size:0.8rem; color:var(--text-muted)">${esc(p.name_zh)}</div>` : ''}
                 </div>
             </div>
             <div style="font-size:1.8rem; font-weight:900; color:var(--accent-green);">${p.tournament_goals}</div>
         </div>`;
     }).join('');
+}
+
+function formatDateRange(matches) {
+    if (!matches || matches.length === 0) return '';
+    var first = matches[0].match_time_utc;
+    var last = matches[matches.length - 1].match_time_utc;
+    function fmt(d) {
+        if (!d) return '';
+        var dt = new Date(d);
+        return (dt.getMonth() + 1) + '/' + dt.getDate();
+    }
+    var f = fmt(first), l = fmt(last);
+    return f === l ? f : f + ' — ' + l;
 }
 
 function renderBracket() {
@@ -433,8 +446,13 @@ function renderBracket() {
     let html = '';
     stages.forEach(stage => {
         const smatches = globalData.matches.filter(m => m.group_stage === stage);
-        html += `<div style='display:flex; flex-direction:column; justify-content:space-around; gap:20px; min-width:200px;'>
-            <h3 style='text-align:center; color:var(--accent-blue); margin-bottom:10px;'>${esc(stage)}</h3>`;
+        // 按时间排序
+        smatches.sort((a,b) => (a.match_time_utc||'').localeCompare(b.match_time_utc||''));
+        const dateRange = formatDateRange(smatches);
+        html += '<div style=\'display:flex; flex-direction:column; justify-content:space-around; gap:20px; min-width:200px;\'>'
+            + '<h3 style=\'text-align:center; color:var(--accent-blue); margin-bottom:2px;\'>' + esc(stage) + '</h3>'
+            + (dateRange ? '<div style=\'text-align:center; font-size:0.72rem; color:var(--text-muted); margin-bottom:10px;\'>' + esc(dateRange) + '</div>' : '')
+            + '';
         smatches.forEach(m => {
             const hs = m.home_score !== null ? m.home_score : '-';
             const aS = m.away_score !== null ? m.away_score : '-';
@@ -660,7 +678,7 @@ function renderHistory() {
 window.showPlayer = function(pid) {
     const p = globalData.players[pid];
     if(!p) return;
-    document.getElementById('modal-name').innerText = p.name_zh + ' (' + p.name_en + ')';
+    document.getElementById('modal-name').innerText = p.name_en + (p.name_zh && p.name_zh !== p.name_en ? ' (' + p.name_zh + ')' : '');
     document.getElementById('modal-sub').innerText = (posMap[p.position] || p.position) + ' • ' + p.jersey_number + '号';
     
     // Parse enriched description JSON from TheSportsDB
@@ -854,7 +872,7 @@ function renderPlayerRatings() {
         html += '<td style="padding:8px 6px;text-align:center;font-weight:700;font-size:0.9rem;">' + rank + '</td>';
         html += '<td style="padding:8px 6px;text-align:center;"><span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;clip-path:polygon(30% 0%,70% 0%,100% 30%,100% 70%,70% 100%,30% 100%,0% 70%,0% 30%);background:rgba(255,255,255,0.08);color:' + badgeColor + ';font-weight:900;font-size:0.85rem;text-shadow:' + badgeGlow + ';">' + r + '</span></td>';
         html += '<td style="padding:8px 6px;text-align:center;">' + avatarHtml + '</td>';
-        html += '<td style="padding:8px;font-weight:600;">' + esc(p.name_zh || '') + '</td>';
+        html += '<td style="padding:8px;font-weight:600;">' + esc(p.name_zh && p.name_zh !== p.name_en ? p.name_zh : '—') + '</td>';
         html += '<td style="padding:8px;color:var(--text-muted);font-size:0.75rem;">' + esc(p.name_en || '') + '</td>';
         html += '<td style="padding:8px 6px;font-size:0.8rem;">' + flagHtml + esc(p.team_name_zh || '') + '</td>';
         html += '<td style="padding:8px 6px;text-align:center;font-size:0.75rem;color:var(--text-muted);">' + esc(p.position || '') + '</td>';

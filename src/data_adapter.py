@@ -557,11 +557,11 @@ class DataAdapter:
                             (team_id, name_en),
                         )
                         row = cur.fetchone()
-                        name_zh_val = SCORER_ZH.get(name_en, name_en)
                         if row:
+                            # Only update goals, preserve existing name_zh
                             cur.execute(
-                                "UPDATE Players SET tournament_goals = ?, name_zh = ? WHERE id = ?",
-                                (goals, name_zh_val, row[0]),
+                                "UPDATE Players SET tournament_goals = ? WHERE id = ?",
+                                (goals, row[0]),
                             )
                             updated_players += 1
                         else:
