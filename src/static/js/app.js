@@ -47,7 +47,10 @@ async function loadSettings() {
             if (inp) inp.value = interval;
             startTimers(interval);
         }
-    } catch(e) { startTimers(5); }
+    } catch(e) {
+        console.error('loadSettings failed:', e);
+        startTimers(5);
+    }
 }
 
 async function saveRefreshInterval(val) {
@@ -57,7 +60,9 @@ async function saveRefreshInterval(val) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refresh_interval: parseInt(val) || 5 })
         });
-    } catch(e) {}
+    } catch(e) {
+        console.error('saveRefreshInterval failed:', e);
+    }
 }
 
 function showError(msg) {
@@ -75,11 +80,20 @@ async function loadData() {
         const res = await fetch('/api/data');
         const json = await res.json();
         if(json.status === 'success') {
+            // Preserve sub-views that are loaded from separate APIs, so
+            // auto-refresh (which only re-fetches /api/data) never wipes them.
+            var prevPowerRanking = globalData.powerRanking;
+            var prevPlayerRatings = globalData.playerRatings;
+            var prevPlayerRanking = globalData.playerRanking;
             globalData = json.data;
-            globalData.playerRatings = globalData.playerRatings || {};
-            globalData.powerRanking = globalData.powerRanking || [];
+            globalData.powerRanking = prevPowerRanking || [];
+            globalData.playerRatings = prevPlayerRatings || {};
+            globalData.playerRanking = prevPlayerRanking || [];
             console.log('loadData: success, teams=' + Object.keys(json.data.teams).length + ' players=' + Object.keys(json.data.players).length + ' matches=' + json.data.matches.length);
             renderAll();
+            // Always re-fetch sub-views so they stay current (fires in background)
+            loadPowerRanking();
+            loadPlayerRatings();
         } else {
             showError("数据加载失败: " + json.message);
             console.error('loadData: API returned error:', json);
@@ -88,7 +102,9 @@ async function loadData() {
         showError("网络连接异常，请检查服务器是否运行");
         console.error('loadData: fetch failed:', e);
         // Still try to render history (uses hardcoded data, no API needed)
-        try { renderHistory(); } catch(e2) {}
+        try { renderHistory(); } catch(e2) {
+            console.error('renderHistory fallback failed:', e2);
+        }
     }
 }
 
@@ -153,8 +169,12 @@ async function loadPowerRanking() {
         if (json.status === 'success') {
             globalData.powerRanking = json.ranking;
             renderPowerRanking();
+        } else {
+            console.error('loadPowerRanking: API returned error:', json.message || json);
         }
-    } catch(e) {}
+    } catch(e) {
+        console.error('loadPowerRanking failed:', e);
+    }
 }
 
 async function loadPlayerRatings() {
@@ -167,8 +187,12 @@ async function loadPlayerRatings() {
             renderMatches('live');
             renderMatches('all');
             renderPlayerRatings();
+        } else {
+            console.error('loadPlayerRatings: API returned error:', json.message || json);
         }
-    } catch(e) {}
+    } catch(e) {
+        console.error('loadPlayerRatings failed:', e);
+    }
 }
 
 // ================= RENDER LOGIC =================
@@ -291,6 +315,29 @@ function renderMatches(type) {
 
         const card = document.createElement('div');
         card.className = 'match-card';
+        // Knockout labels: when teams are TBD, show bracket position (e.g. "A2" vs "B1")
+        var homeDisplay = m.home_name_zh;
+        var awayDisplay = m.away_name_zh;
+        var homeSub = m.home_name;
+        var awaySub = m.away_name;
+        var homeClick = 'showTeam(' + m.home_team_id + ')';
+        var awayClick = 'showTeam(' + m.away_team_id + ')';
+        if (m.home_name_zh === '待定' && m.home_label) {
+            homeDisplay = m.home_label;
+            homeSub = '待定';
+            homeClick = '';  // TBD team, no click
+        }
+        if (m.away_name_zh === '待定' && m.away_label) {
+            awayDisplay = m.away_label;
+            awaySub = '待定';
+            awayClick = '';
+        }
+
+        // VS display: for upcoming matches with score=0, show "VS" not "0-0"
+        if (m.status === 'upcoming' && m.home_name_zh === '待定') {
+            scoreHTML = '<div class="vs">VS</div>';
+        }
+
         card.innerHTML = `
             <div class="match-header">
                 <div class="time-box">
@@ -301,16 +348,16 @@ function renderMatches(type) {
                 <div>${esc(m.group_stage)}</div>
             </div>
             <div class="teams-container">
-                <div class="team" style="cursor:pointer;" onclick="showTeam(${m.home_team_id})">
+                <div class="team"${homeClick ? ' style="cursor:pointer;" onclick="' + homeClick + '"' : ''}>
                     <img src="${m.home_flag}">
-                    <h3 style="margin-bottom: 5px; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-blue)'" onmouseout="this.style.color=''"> ${esc(m.home_name_zh)}</h3>
-                    <div style="font-size:0.8rem;color:var(--text-muted)">${esc(m.home_name)}</div>
+                    <h3 style="margin-bottom: 5px; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-blue)'" onmouseout="this.style.color=''"> ${esc(homeDisplay)}</h3>
+                    <div style="font-size:0.8rem;color:var(--text-muted)">${esc(homeSub)}</div>
                 </div>
                 <div class="score">${scoreHTML}</div>
-                <div class="team" style="cursor:pointer;" onclick="showTeam(${m.away_team_id})">
+                <div class="team"${awayClick ? ' style="cursor:pointer;" onclick="' + awayClick + '"' : ''}>
                     <img src="${m.away_flag}">
-                    <h3 style="margin-bottom: 5px; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-blue)'" onmouseout="this.style.color=''"> ${esc(m.away_name_zh)}</h3>
-                    <div style="font-size:0.8rem;color:var(--text-muted)">${esc(m.away_name)}</div>
+                    <h3 style="margin-bottom: 5px; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-blue)'" onmouseout="this.style.color=''"> ${esc(awayDisplay)}</h3>
+                    <div style="font-size:0.8rem;color:var(--text-muted)">${esc(awaySub)}</div>
                 </div>
             </div>
             <div class="lineups">
@@ -464,17 +511,28 @@ function renderBracket() {
             var labelHtml = (m.home_label && m.away_label && m.home_name_zh === '待定')
                 ? '<div style=\"font-size:0.7rem; color:var(--text-muted); text-align:center; margin-bottom:4px; padding:3px 8px; background:rgba(0,240,255,0.05); border-radius:6px;\">' + esc(m.home_label) + ' vs ' + esc(m.away_label) + '</div>'
                 : '';
+            // 晋级方打钩 & 点球标记
+            var homeWin = (m.winner === 'home');
+            var awayWin = (m.winner === 'away');
+            var isPenalty = !!m.penalty;
+            var winStyle = 'color:#00ff87;font-weight:bold;';
+            var loseStyle = 'opacity:0.45;';
+            var checkMark = '<span style="margin-left:4px;color:#00ff87;font-size:1rem;">&#10003;</span>';
+            var penaltyLabel = isPenalty
+                ? '<div style="font-size:0.68rem;color:#ffb347;text-align:center;margin-top:-6px;">点球决胜</div>'
+                : '';
             html += `
             <div class="match-card" style="padding: 10px 15px; margin-bottom:0; display:flex; flex-direction:column; gap:10px; border-color:${color}; background:${bg};">
                 ${labelHtml}
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:0.9rem"><img src="${esc(m.home_flag)}" style="width:18px;vertical-align:middle;border-radius:2px;"> ${esc(homeDisplay)}</span>
+                    <span style="font-size:0.9rem;${homeWin ? winStyle : (m.status==='finished'&&awayWin ? loseStyle : '')}"><img src="${esc(m.home_flag)}" style="width:18px;vertical-align:middle;border-radius:2px;"> ${esc(homeDisplay)}${homeWin ? checkMark : ''}</span>
                     <span style="font-weight:bold">${hs}</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:0.9rem"><img src="${esc(m.away_flag)}" style="width:18px;vertical-align:middle;border-radius:2px;"> ${esc(awayDisplay)}</span>
+                    <span style="font-size:0.9rem;${awayWin ? winStyle : (m.status==='finished'&&homeWin ? loseStyle : '')}"><img src="${esc(m.away_flag)}" style="width:18px;vertical-align:middle;border-radius:2px;"> ${esc(awayDisplay)}${awayWin ? checkMark : ''}</span>
                     <span style="font-weight:bold">${aS}</span>
                 </div>
+                ${penaltyLabel}
             </div>`;
         });
         html += "</div>";

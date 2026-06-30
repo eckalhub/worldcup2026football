@@ -3,8 +3,11 @@ import logging
 import json
 import math
 import os
+import requests
 from contextlib import closing
 from typing import Dict, Any, Tuple, List
+
+from data_adapter import _load_token, BASE_URL
 
 logger = logging.getLogger(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'worldcup2026.db')
@@ -40,7 +43,77 @@ def get_all_data() -> Dict[str, Any]:
                     ORDER BY m.match_time_utc ASC
                 ''')
                 matches = [dict(row) for row in cursor.fetchall()]
-                
+
+                # ── Enrich knockout matches: determine advancing team + penalty ─
+                _ko_stages = {
+                    'R32': '1/16决赛', 'R16': '1/8决赛',
+                    'QF': '1/4决赛', 'SF': '半决赛',
+                    '3RD': '季军赛', 'FINAL': '决赛',
+                }
+                _ko_order = ['1/16决赛', '1/8决赛', '1/4决赛', '半决赛', '季军赛', '决赛']
+                _ko_progression = {'1/16决赛': '1/8决赛', '1/8决赛': '1/4决赛',
+                                   '1/4决赛': '半决赛', '半决赛': '决赛'}
+                try:
+                    _tok = _load_token()
+                    if _tok:
+                        _gresp = requests.get(
+                            f'{BASE_URL}/get/games',
+                            headers={'Authorization': f'Bearer {_tok}'}, timeout=10)
+                        if _gresp.status_code == 200:
+                            _agames = _gresp.json().get('games', [])
+                            # Build API team id → DB team id mapping
+                            _tresp = requests.get(
+                                f'{BASE_URL}/get/teams',
+                                headers={'Authorization': f'Bearer {_tok}'}, timeout=10)
+                            _ateams = (_tresp.json().get('teams', [])
+                                       if _tresp.status_code == 200 else [])
+                            _aname2dbid: Dict[int, int] = {}
+                            for _at in _ateams:
+                                _an = (_at.get('name_en', '') or '').strip().lower()
+                                _db_match = next(
+                                    (t for t in teams.values()
+                                     if t['name'].strip().lower() == _an), None)
+                                if _db_match:
+                                    _aname2dbid[int(_at['id'])] = _db_match['id']
+                            # Which DB team IDs appear in each knockout stage?
+                            _stage_teams: Dict[str, set] = {s: set() for s in _ko_order}
+                            for _g in _agames:
+                                _gs = _ko_stages.get(_g.get('group', ''), '')
+                                if _gs:
+                                    for _aid in (_g.get('home_team_id'), _g.get('away_team_id')):
+                                        if _aid is not None and int(_aid) > 0:
+                                            _did = _aname2dbid.get(int(_aid))
+                                            if _did:
+                                                _stage_teams[_gs].add(_did)
+                            # Annotate matches
+                            for _m in matches:
+                                if _m.get('status') != 'finished':
+                                    continue
+                                _ms = _m.get('group_stage', '') or ''
+                                if _ms not in _ko_order and _ms not in ('R32','R16','QF','SF','3RD','FINAL'):
+                                    continue
+                                _hs = _m['home_score'] or 0
+                                _aws = _m['away_score'] or 0
+                                if _hs > _aws:
+                                    _m['winner'] = 'home'
+                                elif _aws > _hs:
+                                    _m['winner'] = 'away'
+                                else:
+                                    # Draw in finished knockout → penalty shootout
+                                    _next = _ko_progression.get(_ms)
+                                    _nteam = _stage_teams.get(_next, set()) if _next else set()
+                                    if _m['home_team_id'] in _nteam:
+                                        _m['winner'] = 'home'
+                                        _m['penalty'] = True
+                                    elif _m['away_team_id'] in _nteam:
+                                        _m['winner'] = 'away'
+                                        _m['penalty'] = True
+                                    else:
+                                        # No bracket data yet → unknown winner
+                                        _m['penalty'] = True
+                except Exception as _e:
+                    logger.warning('Knockout annotation failed: %s', _e)
+
                 # Lineups
                 cursor.execute('''
                     SELECT l.match_id, l.player_id, p.team_id, m.home_team_id, l.is_starter
@@ -305,8 +378,6 @@ def get_power_ranking(
             if m.get('group_stage') != stage:
                 continue
             hid, aid = m['home_team_id'], m['away_team_id']
-            if hid in team_stage and hid not in (team_stage.keys()):
-                pass
             # Winner advances to next round
             hs, aws = m['home_score'] or 0, m['away_score'] or 0
             if hs > aws:
@@ -316,6 +387,104 @@ def get_power_ranking(
             # Draw not possible in knockout (penalties)
             else:
                 pass
+
+    # ── Knockout draw resolution (penalty shootouts) ──────────────────────
+    # worldcup26.ir API does not return penalty results directly, but the
+    # bracket reveals the winner: the team that appears in the next round's
+    # match is the one that advanced on penalties.
+    #
+    # DB bracket (from dongqiudi) uses TBD_Home/TBD_Away placeholders for
+    # undecided rounds, so we query the live API to get the advancing teams.
+    _ko_stage_order = [
+        '1/16决赛', '1/8决赛', '1/4决赛', '半决赛', '季军赛', '决赛'
+    ]
+
+    # Build API team_id → DB team_id mapping
+    _api_to_db_tid: Dict[int, int] = {}
+    with closing(sqlite3.connect(db_path)) as _conn:
+        _conn.row_factory = sqlite3.Row
+        with closing(_conn.cursor()) as _cur:
+            _cur.execute('SELECT id, name FROM Teams')
+            for _row in _cur.fetchall():
+                _db_name = (_row['name'] or '').strip()
+                _api_to_db_tid.setdefault(_db_name.lower(), _row['id'])
+
+    # Fetch API bracket data
+    _api_ko_teams: Dict[str, set] = {_st: set() for _st in _ko_stage_order}
+    try:
+        _token = _load_token()
+        if _token:
+            _resp = requests.get(
+                f'{BASE_URL}/get/games',
+                headers={'Authorization': f'Bearer {_token}'},
+                timeout=10,
+            )
+            if _resp.status_code == 200:
+                _api_games = _resp.json().get('games', [])
+                _api_teams_resp = requests.get(
+                    f'{BASE_URL}/get/teams',
+                    headers={'Authorization': f'Bearer {_token}'},
+                    timeout=10,
+                )
+                _api_teams = _api_teams_resp.json().get('teams', []) if _api_teams_resp.status_code == 200 else []
+                # Map API team names → DB team IDs
+                _api_name_to_db: Dict[int, int] = {}
+                for _at in _api_teams:
+                    _api_name = (_at.get('name_en', '') or '').strip().lower()
+                    if _api_name in _api_to_db_tid:
+                        _api_name_to_db[int(_at['id'])] = _api_to_db_tid[_api_name]
+
+                _api_stage_map = {
+                    'R32': '1/16决赛', 'R16': '1/8决赛',
+                    'QF': '1/4决赛', 'SF': '半决赛',
+                    '3RD': '季军赛', 'FINAL': '决赛',
+                }
+                for _g in _api_games:
+                    _api_stage = _g.get('group', '')
+                    _db_stage = _api_stage_map.get(_api_stage, _api_stage)
+                    if _db_stage not in _ko_stage_order:
+                        continue
+                    for _api_tid in (_g.get('home_team_id'), _g.get('away_team_id')):
+                        if _api_tid is not None and int(_api_tid) > 0:
+                            _db_tid = _api_name_to_db.get(int(_api_tid))
+                            if _db_tid:
+                                _api_ko_teams[_db_stage].add(_db_tid)
+    except Exception as _e:
+        logger.warning('Could not fetch API bracket data for knockout resolution: %s', _e)
+
+    # Merge: DB data (finished) + API data (all, including upcoming)
+    _ko_teams_per_stage: Dict[str, set] = {}
+    _all_ko_teams: set = set()
+    for _st in _ko_stage_order:
+        _merged = set()
+        # Add teams from finished DB matches in this stage
+        for _m in finished_matches:
+            if _m.get('group_stage') == _st:
+                for _tid in (_m['home_team_id'], _m['away_team_id']):
+                    if _tid and _tid > 0:
+                        _merged.add(_tid)
+        # Add teams from API bracket for this stage
+        _merged |= _api_ko_teams.get(_st, set())
+        _ko_teams_per_stage[_st] = _merged
+        _all_ko_teams |= _merged
+
+    _stage_progression = {
+        '1/16决赛': '1/8决赛', '1/8决赛': '1/4决赛',
+        '1/4决赛': '半决赛', '半决赛': '决赛'
+    }
+    for _stage, _next_st in _stage_progression.items():
+        _next_teams = _ko_teams_per_stage.get(_next_st, set())
+        for _m in finished_matches:
+            if _m.get('group_stage') != _stage:
+                continue
+            _hs, _aws = _m['home_score'] or 0, _m['away_score'] or 0
+            if _hs != _aws:
+                continue  # Clear winner already handled above
+            _hid, _aid = _m['home_team_id'], _m['away_team_id']
+            if _hid in _next_teams:
+                team_stage[_hid] = _next_st
+            if _aid in _next_teams:
+                team_stage[_aid] = _next_st
 
     # ── Per-team computation ─────────────────────────────────────────────
     results: List[Dict[str, Any]] = []
@@ -476,21 +645,32 @@ def get_power_ranking(
 
         # -- Determine elimination status ----------------------------------
         eliminated = False
-        if played >= 3:
-            # Check if team played in group stage and didn't qualify
-            # A team is eliminated if all 3 group games are done
-            # and they're not in any knockout stage
-            in_knockout = any(
-                k in team_stage.get(tid, '') for k in knockout_stages
-            )
-            if (tstats.get('losses', 0) >= 3 or
-                    (played >= 3 and not in_knockout
-                     and not db_team.get('group_name', '').startswith('1/'))):
-                # Heuristic: if played 3+ games and not visibly in knockout,
-                # may be eliminated.  More precise: check group standings.
-                # For now, mark as eliminated only if 3 losses.
-                if tstats.get('losses', 0) >= 3:
-                    eliminated = True
+        if tid in _all_ko_teams:
+            # Team appeared in at least one knockout match — find their
+            # deepest knockout stage from the bracket data.
+            _deepest_idx = -1
+            for _i, _st in enumerate(_ko_stage_order):
+                if tid in _ko_teams_per_stage.get(_st, set()):
+                    _deepest_idx = _i
+            if _deepest_idx >= 0:
+                _deepest_stage = _ko_stage_order[_deepest_idx]
+                # 决赛 and 季军赛 are terminal — teams there are never eliminated
+                if _deepest_stage not in ('决赛', '季军赛'):
+                    if _deepest_stage == '1/16决赛':
+                        # Teams only in R32: check if they actually played
+                        # their knockout match yet.  If played == 3 (group
+                        # only), the R32 match is upcoming → not eliminated.
+                        # If played >= 4, they played and lost → eliminated.
+                        # Exception: if they also appear in R16, they
+                        # advanced (already handled by deeper stage check).
+                        if played >= 4:
+                            eliminated = True
+                    # Teams in later stages (1/8决赛, 1/4决赛, 半决赛) have
+                    # already advanced past at least one round → not eliminated.
+        elif played >= 3:
+            # Team has not appeared in any knockout match and has played
+            # at least 3 group-stage games → eliminated from group stage.
+            eliminated = True
 
         # Build result entry
         results.append({
